@@ -101,6 +101,10 @@
  *******************************************************************************************************/
 #if defined(FS1000_ON) // || #if defined(другой передатчик)
   #include "CodeDecodeFloat.h"
+  #include "PackageData.h"
+
+  Package_msg msg;  // Передаваемое сообщение
+  unsigned int  packet_id = 0; // ID пакета.
 #endif
 /*******************************************************************************************************/
 
@@ -126,7 +130,7 @@
 /*******************************************************************************************************
  * Количество периодов простоя между замерами по 8 сек. Например 40 периодов - 40 * 8 = 320 сек.
  *******************************************************************************************************/
-#define IDLE_PER  40  
+#define IDLE_PER  1
 /*******************************************************************************************************/
 
 void setup(){
@@ -186,14 +190,6 @@ void loop(){
 
   #if defined(BMP_USE_PRESS)
     float pres = 0.0;
-  #endif
-
-  
-  #ifdef FS1000_ON
-    // Размер передаваемого сообщения
-    #define BUFLEN  12
-    // Передаваемое сообщение
-    uint8_t buf[BUFLEN];    // буфер для передачи
   #endif
 
   #ifndef POWER_LOW
@@ -276,53 +272,93 @@ void loop(){
   
   #ifdef FS1000_ON
     // Соберем показания датчиков в сообщение
+    msg.device_id       = WEATHER_SENSOR1_ID; // ID устройства отправителя
+    msg.destination_id  = BROADCAST;          // ID устройства получателя
+    msg.command         = CMD_REPORT;
+    
     #if defined(DHT_USE_TEMP) || defined(BMP_USE_TEMP)  // Температура
-      float_to_buf(temp, &buf[0]);                   
-    #else
-      // Очистим буфер дефалтовым значением 0xFF
-      buf[0] = buf[1] = buf[2] = 0xFF;
+      msg.packet_id       = ++packet_id;
+      msg.data.b = WEATHER_SENSOR_TEMP;
+      msg.data.f = temp;
+      #ifdef DEBUG  
+        Serial.print("Sending msg (HEX): \t");
+        Serial.print("device_id = "); Serial.print(msg.device_id);
+        Serial.print("\tdestination_id = "); Serial.print(msg.destination_id);
+        Serial.print("\tpacket_id = "); Serial.print(msg.packet_id);
+        Serial.print("\tcommand = "); Serial.println(msg.command);
+        for(int i = 0 ; i < sizeof(msg.data) ; i++){
+          Serial.print(msg.data.ab[i], HEX);
+          Serial.print(" ");
+        }
+        Serial.println("");
+      #endif
+      // Передаем в эфир показание датчика
+      vw_send((uint8_t *)&msg, sizeof(msg));  // Отправим сообщение
+      vw_wait_tx();                           // Подождем пока все сообщение не будет отправлено  
     #endif
   
     #if defined(DHT_USE_HUM)                            // Влажность
-      float_to_buf(hum, &buf[3]);
-    #else
-      // Очистим буфер дефалтовым значением 0xFF
-      buf[3] = buf[4] = buf[5] = 0xFF;
+      msg.packet_id       = ++packet_id;
+      msg.data.b = WEATHER_SENSOR_HUM;
+      msg.data.f = hum;
+      #ifdef DEBUG  
+        Serial.print("Sending msg (HEX): \t");
+        Serial.print("device_id = "); Serial.print(msg.device_id);
+        Serial.print("\tdestination_id = "); Serial.print(msg.destination_id);
+        Serial.print("\tpacket_id = "); Serial.print(msg.packet_id);
+        Serial.print("\tcommand = "); Serial.println(msg.command);
+        for(int i = 0 ; i < sizeof(msg.data) ; i++){
+          Serial.print(msg.data.ab[i], HEX);
+          Serial.print(" ");
+        }
+        Serial.println("");
+      #endif
+      // Передаем в эфир показание датчика
+      vw_send((uint8_t *)&msg, sizeof(msg));  // Отправим сообщение
+      vw_wait_tx();   
     #endif
   
     #if defined(BMP_USE_PRESS)                          // Давление
-      float_to_buf(pres - 900.0, &buf[6]);
-    #else
-      // Очистим буфер дефалтовым значением 0xFF
-      buf[6] = buf[7] = buf[8] = 0xFF;
+      msg.packet_id       = ++packet_id;
+      msg.data.b = WEATHER_SENSOR_PRES;
+      msg.data.f = pres;
+      #ifdef DEBUG  
+        Serial.print("Sending msg (HEX): \t");
+        Serial.print("device_id = "); Serial.print(msg.device_id);
+        Serial.print("\tdestination_id = "); Serial.print(msg.destination_id);
+        Serial.print("\tpacket_id = "); Serial.print(msg.packet_id);
+        Serial.print("\tcommand = "); Serial.println(msg.command);
+        for(int i = 0 ; i < sizeof(msg.data) ; i++){
+          Serial.print(msg.data.ab[i], HEX);
+          Serial.print(" ");
+        }
+        Serial.println("");
+      #endif
+      // Передаем в эфир показание датчика
+      vw_send((uint8_t *)&msg, sizeof(msg));  // Отправим сообщение
+      vw_wait_tx();  
     #endif
   
     #ifdef POWER_LOW                                    // Напряжение
-      float_to_buf(power, &buf[9]);
-    #else
-      // Очистим буфер дефалтовым значением 0xFF
-      buf[9] = buf[10] = buf[11] = 0xFF;
+      msg.packet_id       = ++packet_id;
+      msg.data.b = WEATHER_SENSOR_POWER;
+      msg.data.f = power;
+      #ifdef DEBUG  
+        Serial.print("Sending msg (HEX): \t");
+        Serial.print("device_id = "); Serial.print(msg.device_id);
+        Serial.print("\tdestination_id = "); Serial.print(msg.destination_id);
+        Serial.print("\tpacket_id = "); Serial.print(msg.packet_id);
+        Serial.print("\tcommand = "); Serial.println(msg.command);
+        for(int i = 0 ; i < sizeof(msg.data) ; i++){
+          Serial.print(msg.data.ab[i], HEX);
+          Serial.print(" ");
+        }
+        Serial.println("");
+      #endif
+      // Передаем в эфир показание датчика
+      vw_send((uint8_t *)&msg, sizeof(msg));  // Отправим сообщение
+      vw_wait_tx();
     #endif
-    
-    #ifdef DEBUG  
-      Serial.print("Sending msg (DEC): \t");
-      for(int i = 0 ; i < BUFLEN ; i++){
-        Serial.print(buf[i], DEC);
-        Serial.print(" ");
-      }
-      Serial.println("");
-
-      Serial.print("Sending msg (HEX): \t");
-      for(int i = 0 ; i < BUFLEN ; i++){
-        Serial.print(buf[i], HEX);
-        Serial.print(" ");
-      }
-      Serial.println("");
-    #endif
-    
-    // Передаем в эфир показания датчиков
-    vw_send((uint8_t *)buf, BUFLEN);  // Отправим сообщение
-    vw_wait_tx();                     // Подождем пока все сообщение не будет отправлено  
   #endif
   
   #ifndef POWER_LOW
@@ -334,6 +370,12 @@ void loop(){
   #else
     // Пауза между опросами датчиков (засыпаем на IDLE_PER периодов по 8 сек.)
     // Сильно желательно на Arduino убрать power led, иначе он все усилия по энергосбережению сведет на нет...
+    
+    #ifdef DEBUG
+      // Перед сном дадим немного времени дослать отладку в Serial
+      delay(500);
+    #endif
+    
     for(int i = 0 ; i < IDLE_PER ; i++ )
       #if defined (__AVR_ATmega328P__) || defined (__AVR_ATmega168__) 
             LowPower.idle(SLEEP_8S, ADC_OFF, TIMER2_OFF, TIMER1_OFF, TIMER0_OFF, 
