@@ -1,5 +1,24 @@
+#ifndef MeasurementPower_h
+#define MeasurementPower_h
+
+const float InternalReferenceVoltage = 1.096; // as measured
 
 float readVcc() {
+  ADCSRA =  bit (ADEN);   // turn ADC on
+  ADCSRA |= bit (ADPS0) |  bit (ADPS1) | bit (ADPS2);  // Prescaler of 128
+  ADMUX = bit (REFS0) | bit (MUX3) | bit (MUX2) | bit (MUX1);
+  
+  delay (10);  // let it stabilize
+  
+  bitSet (ADCSRA, ADSC);  // start a conversion  
+  while ( bit_is_set(ADCSRA, ADSC) ){
+  }
+  
+  float results = InternalReferenceVoltage / (float(ADC) + 0.5) * 1024.0; 
+
+  return results;
+
+/*  
   // Read 1.1V reference against AVcc
   // set the reference to Vcc and the measurement to the internal 1.1V reference
   #if defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
@@ -33,4 +52,9 @@ float readVcc() {
   #endif
   
   return (1125.3 / (float)result); // Vcc in volts
+*/
 }
+
+
+
+#endif

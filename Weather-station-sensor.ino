@@ -9,19 +9,26 @@
 /*
  * КОНФИГУРАЦИЯ СЕНСОРА
  * Раскоментируйте #define для используемых модулей
- *    DEBUG     - вывод отладочной информации в Serial
- *    DHT_ON    - подключение модуля температуры и влажности DHT11\21\22
- *    BMP_ON    - подключение модуля давления и температуры BMP085\180
- *    FS1000_ON - подключение передатчика 433\315MHz
- *    POWER_LOW - использовать режим энергосбережения
+ *    DEBUG             - вывод отладочной информации в Serial
+ *    DHT_ON            - подключение модуля температуры и влажности DHT11\21\22
+ *    BMP_ON            - подключение модуля давления и температуры BMP085\180
+ *    FS1000_ON         - подключение передатчика 433\315MHz
+ *    POWER_LOW         - использовать режим энергосбережения
+ *    USE_LED_WORK      - использовать светодиод для индикации работы сенсора
+ *    USE_LED_LOW_POWER - использовать светодиод для индикации слабого напряжения питания (три коротких периодических моргания между снами)
+ *    
  */
 
 //#define DEBUG
 #define DHT_ON
-#define BMP_ON
+//#define BMP_ON
 #define FS1000_ON
 #define POWER_LOW
+//#define USE_LED_WORK
+#define USE_LED_LOW_POWER
 /*******************************************************************************************************/
+
+//byte _a; // Что бы обмануть препроцессор. См. http://arduino.ru/forum/programmirovanie/oshibka-kompilyatsii-pri-ispolzovanii-ifdefa
 
 #include <Arduino.h>
 
@@ -92,15 +99,14 @@
   #define pinTransmitter433 3
 
   // Скорость передачи
-  #define TransmissionSpeed 2400
+  #define TransmissionSpeed 2048
 #endif
 /*******************************************************************************************************/
 
 /*******************************************************************************************************
  * БИБЛИОТЕКА КОДИРОВАНИЯ ЗНАЧЕНИЙ ДАТЧИКОВ
  *******************************************************************************************************/
-#if defined(FS1000_ON) // || #if defined(другой передатчик)
-  #include "CodeDecodeFloat.h"
+#if defined(FS1000_ON) //|| defined(другой передатчик)
   #include "PackageData.h"
 
   Package_msg msg;  // Передаваемое сообщение
@@ -115,22 +121,22 @@
   #include <LowPower.h>
   #include "MeasurementPower.h"
 
+  // При снижении напряжения до скольки вольт начинать жалобно мигать светодиодом
+  #define POWER_LOW_VOLT 3.0
 #endif
 /*******************************************************************************************************/
 
 /*******************************************************************************************************
  * СИГНАЛЬНЫЙ СВЕТОДИОД
  *******************************************************************************************************/
-#ifndef POWER_LOW
-  // Сигнальный светодиод
-  #define pinLEN    13
-#endif
+// Пин используемый светодиодом
+#define pinLED    13
 /*******************************************************************************************************/
 
 /*******************************************************************************************************
- * Количество периодов простоя между замерами по 8 сек. Например 40 периодов - 40 * 8 = 320 сек.
+ * Количество периодов простоя по 8 сек., между замерами показаний датчиков. Например 40 периодов - 40 * 8 = 320 сек.
  *******************************************************************************************************/
-#define IDLE_PER  1
+#define IDLE_PER  40
 /*******************************************************************************************************/
 
 void setup(){
@@ -143,7 +149,8 @@ void setup(){
     #ifdef DEBUG
       Serial.println("DHT11/21/22 on.");
     #endif
-    
+
+    // Инициализируем DHT11/21/22
     dht.begin();
   #endif
 
@@ -162,8 +169,8 @@ void setup(){
     }
   #endif
 
-  #ifndef POWER_LOW
-    pinMode(pinLEN, OUTPUT);
+  #if defined(USE_LED_WORK) || ( defined(USE_LED_LOW_POWER) && defined(POWER_LOW) )
+    pinMode(pinLED, OUTPUT);
   #endif
 
   #ifdef FS1000_ON
@@ -180,7 +187,7 @@ void setup(){
 }
 
 void loop(){
-  #if defined(DHT_USE_TEMP) || defined(BMP_USE_TEMP)
+  #if defined(DHT_USE_TEMP) || defined(BMP_USE_TEMP) //|| defined(другой датчик температуры)
     float temp = 0.0;
   #endif
 
@@ -192,9 +199,9 @@ void loop(){
     float pres = 0.0;
   #endif
 
-  #ifndef POWER_LOW
+  #ifdef USE_LED_WORK
     // На время работы зажгем сигнальный светодиод
-    digitalWrite(pinLEN, HIGH);
+    digitalWrite(pinLED, HIGH);
   #endif
   
   #ifdef DHT_ON
@@ -209,7 +216,7 @@ void loop(){
     #endif
 
     #ifdef DEBUG
-      #if defined(DHT_USE_HUM)
+      #ifdef DHT_USE_HUM
         // Отправим значения влажности и температуры в Serial
         Serial.print("DHTxx: Humidity: \t");
         Serial.print(hum);
@@ -271,14 +278,13 @@ void loop(){
   #endif
   
   #ifdef FS1000_ON
-    // Соберем показания датчиков в сообщение
+    // Соберем показания датчиков в сообщения
     msg.device_id       = WEATHER_SENSOR1_ID; // ID устройства отправителя
     msg.destination_id  = BROADCAST;          // ID устройства получателя
-    msg.command         = CMD_REPORT;
     
     #if defined(DHT_USE_TEMP) || defined(BMP_USE_TEMP)  // Температура
       msg.packet_id       = ++packet_id;
-      msg.data.b = WEATHER_SENSOR_TEMP;
+      msg.command         = CMD_REPORT_WEATHER_SENSOR_TEMP;
       msg.data.f = temp;
       #ifdef DEBUG  
         Serial.print("Sending msg (HEX): \t");
@@ -286,20 +292,21 @@ void loop(){
         Serial.print("\tdestination_id = "); Serial.print(msg.destination_id);
         Serial.print("\tpacket_id = "); Serial.print(msg.packet_id);
         Serial.print("\tcommand = "); Serial.println(msg.command);
+        Serial.print("Data:\t");
         for(int i = 0 ; i < sizeof(msg.data) ; i++){
           Serial.print(msg.data.ab[i], HEX);
           Serial.print(" ");
         }
         Serial.println("");
       #endif
-      // Передаем в эфир показание датчика
+      // Отправим в эфир показание датчика
       vw_send((uint8_t *)&msg, sizeof(msg));  // Отправим сообщение
       vw_wait_tx();                           // Подождем пока все сообщение не будет отправлено  
     #endif
   
     #if defined(DHT_USE_HUM)                            // Влажность
       msg.packet_id       = ++packet_id;
-      msg.data.b = WEATHER_SENSOR_HUM;
+      msg.command         = CMD_REPORT_WEATHER_SENSOR_HUM;
       msg.data.f = hum;
       #ifdef DEBUG  
         Serial.print("Sending msg (HEX): \t");
@@ -307,20 +314,21 @@ void loop(){
         Serial.print("\tdestination_id = "); Serial.print(msg.destination_id);
         Serial.print("\tpacket_id = "); Serial.print(msg.packet_id);
         Serial.print("\tcommand = "); Serial.println(msg.command);
+        Serial.print("Data:\t");
         for(int i = 0 ; i < sizeof(msg.data) ; i++){
           Serial.print(msg.data.ab[i], HEX);
           Serial.print(" ");
         }
         Serial.println("");
       #endif
-      // Передаем в эфир показание датчика
+      // Отправим в эфир показание датчика
       vw_send((uint8_t *)&msg, sizeof(msg));  // Отправим сообщение
       vw_wait_tx();   
     #endif
   
     #if defined(BMP_USE_PRESS)                          // Давление
       msg.packet_id       = ++packet_id;
-      msg.data.b = WEATHER_SENSOR_PRES;
+      msg.command         = CMD_REPORT_WEATHER_SENSOR_PRES;
       msg.data.f = pres;
       #ifdef DEBUG  
         Serial.print("Sending msg (HEX): \t");
@@ -328,20 +336,21 @@ void loop(){
         Serial.print("\tdestination_id = "); Serial.print(msg.destination_id);
         Serial.print("\tpacket_id = "); Serial.print(msg.packet_id);
         Serial.print("\tcommand = "); Serial.println(msg.command);
+        Serial.print("Data:\t");
         for(int i = 0 ; i < sizeof(msg.data) ; i++){
           Serial.print(msg.data.ab[i], HEX);
           Serial.print(" ");
         }
         Serial.println("");
       #endif
-      // Передаем в эфир показание датчика
+      // Отправим в эфир показание датчика
       vw_send((uint8_t *)&msg, sizeof(msg));  // Отправим сообщение
-      vw_wait_tx();  
+      vw_wait_tx();                           // Подождем пока все сообщение не будет отправлено  
     #endif
   
     #ifdef POWER_LOW                                    // Напряжение
       msg.packet_id       = ++packet_id;
-      msg.data.b = WEATHER_SENSOR_POWER;
+      msg.command         = CMD_REPORT_WEATHER_SENSOR_POWER;
       msg.data.f = power;
       #ifdef DEBUG  
         Serial.print("Sending msg (HEX): \t");
@@ -349,34 +358,41 @@ void loop(){
         Serial.print("\tdestination_id = "); Serial.print(msg.destination_id);
         Serial.print("\tpacket_id = "); Serial.print(msg.packet_id);
         Serial.print("\tcommand = "); Serial.println(msg.command);
+        Serial.print("Data:\t");
         for(int i = 0 ; i < sizeof(msg.data) ; i++){
           Serial.print(msg.data.ab[i], HEX);
           Serial.print(" ");
         }
         Serial.println("");
       #endif
-      // Передаем в эфир показание датчика
+      // Отправим в эфир показание датчика
       vw_send((uint8_t *)&msg, sizeof(msg));  // Отправим сообщение
-      vw_wait_tx();
+      vw_wait_tx();                           // Подождем пока все сообщение не будет отправлено  
     #endif
   #endif
-  
-  #ifndef POWER_LOW
+
+  #ifdef USE_LED_WORK
     // По окончании работы погасим сигнальный светодиод
-    digitalWrite(pinLEN, LOW);
-    // Пауза между опросами датчиков (засыпаем на IDLE_PER периодов по 8 сек.)
-    for(int i = 0 ; i < IDLE_PER ; i++ )
-      delay(8000);
-  #else
+    digitalWrite(pinLED, LOW);
+  #endif
+    
+  #ifdef POWER_LOW
     // Пауза между опросами датчиков (засыпаем на IDLE_PER периодов по 8 сек.)
     // Сильно желательно на Arduino убрать power led, иначе он все усилия по энергосбережению сведет на нет...
-    
     #ifdef DEBUG
       // Перед сном дадим немного времени дослать отладку в Serial
       delay(500);
     #endif
     
-    for(int i = 0 ; i < IDLE_PER ; i++ )
+    for(int i = 0 ; i < IDLE_PER ; i++ ){
+      #ifdef USE_LED_LOW_POWER
+        if (power <= POWER_LOW_VOLT) // Если напряжение низкое то просигналим
+          for(int i = 0 ; i < 3; i++){
+            digitalWrite(pinLED, HIGH); delay(10);
+            digitalWrite(pinLED, LOW);  delay(250);
+          }
+      #endif
+
       #if defined (__AVR_ATmega328P__) || defined (__AVR_ATmega168__) 
             LowPower.idle(SLEEP_8S, ADC_OFF, TIMER2_OFF, TIMER1_OFF, TIMER0_OFF, 
                   SPI_OFF, USART0_OFF, TWI_OFF);
@@ -390,5 +406,10 @@ void loop(){
       #else // Тут еще должен быть код засыпок для тинек и др.
         delay(8000);
       #endif
+    }
+  #else
+    // Пауза между опросами датчиков (засыпаем на IDLE_PER периодов по 8 сек.) в случае отключения режима энергосбережения
+    for(int i = 0 ; i < IDLE_PER ; i++ )
+      delay(8000);
   #endif
 }

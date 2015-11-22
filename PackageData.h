@@ -18,20 +18,18 @@
 /*******************************************************************************************************
  * Типы сенсоров
  *******************************************************************************************************/
-#define WEATHER_SENSOR_TEMP   0x01  // Датчик температуры
-#define WEATHER_SENSOR_HUM    0x02  // Датчик влажности
-#define WEATHER_SENSOR_PRES   0x03  // Датчик давления
-#define WEATHER_SENSOR_TEMP   0x04  // Датчик дождя
-#define WEATHER_SENSOR_POWER  0x05  // Датчик напряжения
-
-// Команды
-#define CMD_REPORT  0x01
+#define CMD_REPORT_WEATHER_SENSOR_TEMP   0x01  // Отчет датчика температуры
+#define CMD_REPORT_WEATHER_SENSOR_HUM    0x02  // Отчет датчика влажности
+#define CMD_REPORT_WEATHER_SENSOR_PRES   0x03  // Отчет датчика давления
+#define CMD_REPORT_WEATHER_SENSOR_RAIN   0x04  // Отчет датчика дождя
+#define CMD_REPORT_WEATHER_SENSOR_POWER  0x05  // Отчет датчика напряжения
 
 // Данные пакета
 union msg_data{
   byte  b;
-  byte  ab[20];
+  byte  ab[19];
   char  c;
+  char  ac[19];
   int   i;
   float f;
 };
@@ -44,7 +42,7 @@ public:
   unsigned int  device_id;       // ID устройства отправителя
   unsigned int  destination_id;  // ID устройства получателя или BROADCAST
   unsigned int  packet_id;       // ID пакета
-  byte          command;         // Команда
+  unsigned int  command;         // Команда
   msg_data      data;            // Данные
 };
 
